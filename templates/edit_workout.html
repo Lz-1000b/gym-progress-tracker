@@ -41,7 +41,7 @@
           <label>Date<input name="workout_date" type="date" value="{{ workout.workout_date }}" required></label>
         </div>
 
-        <div class="edit-exercise-heading"><span>EXERCISE</span><span>SETS</span><span>REPS</span><span>KG</span><span class="visually-hidden">REMOVE</span></div>
+        <div class="edit-exercise-heading"><span>EXERCISE</span><span>SETS</span><span>REPS</span><span>{{ weight_unit|upper }}</span><span class="visually-hidden">REMOVE</span></div>
         <div id="edit-exercise-rows">
           {% for exercise in exercises %}
             <div class="exercise-row edit-exercise-row">

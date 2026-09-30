@@ -7,23 +7,16 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  {% if not profile_name %}
-    <dialog class="profile-dialog" id="profile-dialog" aria-labelledby="profile-dialog-ti itle">
-      <p class="eyebrow">LZ GYMTRAK</p>
-      <h2 id="profile-dialog-title">Welcome to GYMTRAK</h2>
-      <p>What should we call you?</p>
-      <form action="{{ url_for('save_profile') }}" method="post">
-        <label for="profile-name">Your name</label>
-        <input class="profile-name-input" id="profile-name" name="name" type="text" maxlength="40" autocomplete="nickname" required autofocus>
-        <button class="save-button" type="submit">Continue <span aria-hidden="true">→</span></button>
-      </form>
-    </dialog>
-  {% endif %}
   <header class="topbar">
     <a class="brand" href="{{ url_for('dashboard') }}" aria-label="Lz GYMTRAK dashboard">
       <img class="brand-logo" src="{{ url_for('static', filename='gymtrak-logo.svg', v=2) }}" alt="LZ GYMTRAK">
     </a>
-    <div class="topbar-note"><span class="status-dot"></span> YOUR TRAINING, IN MOTION</div>
+    <div class="topbar-note">
+      <span class="status-dot"></span> {{ current_user_name }}
+      <form action="{{ url_for('clear_user') }}" method="post">
+        <button class="clear-search" type="submit">Switch user</button>
+      </form>
+    </div>
   </header>
 
   <main class="page-shell">
@@ -32,9 +25,7 @@
         <p class="eyebrow">YOUR TRAINING DESK</p>
         <h1 class="headline-cycle" id="headline-cycle">
           <span class="headline-message is-active" data-headline-message aria-hidden="false">Train. Track. <span class="headline-accent">Progress.</span></span>
-          {% if profile_name %}
-            <span class="headline-message" data-headline-message aria-hidden="true">Welcome, <span class="headline-accent">{{ profile_name }}</span></span>
-          {% endif %}
+          <span class="headline-message" data-headline-message aria-hidden="true">Welcome, <span class="headline-accent">{{ current_user_name }}</span></span>
         </h1>
         <p class="intro">A little consistency adds up. Here's where your work stands.</p>
       </div>
@@ -119,7 +110,7 @@
           {% if personal_records %}
             <ul class="record-list">
               {% for record in personal_records %}
-                <li><span>{{ record.name }}</span><strong>{{ "%.1f"|format(record.best_weight) }} <small>kg</small></strong></li>
+                <li><span>{{ record.name }}</span><strong>{{ "%.1f"|format(record.best_weight) }} <small>{{ weight_unit }}</small></strong></li>
               {% endfor %}
             </ul>
           {% else %}
@@ -137,7 +128,7 @@
               <label>Workout name<input name="workout_name" placeholder="e.g. Upper body" maxlength="80" required></label>
               <label>Date<input name="workout_date" type="date" value="{{ today }}" required></label>
             </div>
-            <div class="exercise-heading"><span>EXERCISE</span><span>SETS</span><span>REPS</span><span>KG</span></div>
+            <div class="exercise-heading"><span>EXERCISE</span><span>SETS</span><span>REPS</span><span>{{ weight_unit|upper }}</span></div>
             <div id="exercise-rows">
               {% for row in range(3) %}
                 <div class="exercise-row">
@@ -166,9 +157,6 @@
     </div>
   </template>
   <script>
-    const profileDialog = document.querySelector("#profile-dialog");
-    if (profileDialog) profileDialog.showModal();
-
     document.querySelectorAll("[data-delete-workout]").forEach((form) => {
       form.addEventListener("submit", (event) => {
         if (!window.confirm("Delete this workout and its exercises?")) event.preventDefault();
