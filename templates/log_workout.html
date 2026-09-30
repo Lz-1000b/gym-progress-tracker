@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ workout.name }} | Lz GYMTRAK</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}" aria-label="Lz GYMTRAK dashboard">
+      <img class="brand-logo" src="{{ url_for('static', filename='gymtrak-logo.svg', v=2) }}" alt="LZ GYMTRAK">
+    </a>
+    <div class="topbar-note">
+      <span class="status-dot"></span> {{ current_user_name }}
+      <form action="{{ url_for('clear_user') }}" method="post">
+        <button class="clear-search" type="submit">Switch user</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page-shell with-rest-banner">
+    <section class="welcome-row">
+      <div>
+        <p class="eyebrow">ACTIVE SESSION</p>
+        <h1>{{ workout.name }}</h1>
+        <p class="intro">Log each set as you finish it &mdash; it saves right away.</p>
+      </div>
+      <a class="primary-link" href="{{ url_for('dashboard') }}"><span aria-hidden="true">&check;</span> Finish</a>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="messages" role="status">
+          {% for category, message in messages %}
+            <p class="message {{ category }}">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="section-block log-section">
+      <div class="section-heading compact-heading">
+        <div><p class="eyebrow">SESSION DETAILS</p><h2>Name &amp; date</h2></div>
+      </div>
+      <form action="{{ url_for('log_workout', workout_id=workout.id) }}" method="post">
+        <div class="form-row">
+          <label>Workout name<input name="workout_name" value="{{ workout.name }}" maxlength="80" required></label>
+          <label>Date<input name="workout_date" type="date" value="{{ workout.workout_date }}" required></label>
+        </div>
+        <button class="save-button" type="submit">Save details <span aria-hidden="true">&rarr;</span></button>
+      </form>
+    </section>
+
+    <section class="section-block log-section">
+      <div class="section-heading compact-heading">
+        <div><p class="eyebrow">{{ weight_unit|upper }} &middot; TAP THE CHECK TO LOG A SET</p><h2>Exercises</h2></div>
+      </div>
+
+      <div id="exercise-blocks">
+        {% for exercise in exercises %}
+          <div class="exercise-block" data-exercise-id="{{ exercise.id }}">
+            <div class="exercise-block-heading">
+              <h3>{{ exercise.name }}</h3>
+              {% if not exercise.sets %}
+                <button type="button" class="remove-exercise-btn" data-remove-exercise>Remove</button>
+              {% endif %}
+            </div>
+            <div class="logged-sets" data-logged-sets>
+              {% for s in exercise.sets %}
+                <div class="logged-set-row" data-set-id="{{ s.id }}">
+                  <span>Set {{ s.set_number }}</span>
+                  <span>{{ s.reps }} reps @ {{ s.weight }} {{ weight_unit }}</span>
+                  {% if loop.last %}<button type="button" class="undo-set-btn" data-undo-set>Undo</button>{% endif %}
+                </div>
+              {% endfor %}
+            </div>
+            <div class="next-set-row">
+              <input type="number" min="1" class="set-reps-input" value="{{ exercise.prefill_reps }}" aria-label="Reps">
+              <input type="number" min="0" step="0.5" class="set-weight-input" value="{{ exercise.prefill_weight }}" aria-label="Weight in {{ weight_unit }}">
+              <button type="button" class="log-set-btn" data-log-set aria-label="Log set">&#10003;</button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <form id="add-exercise-form" class="add-exercise-row">
+        <input type="text" id="new-exercise-name" placeholder="Add an exercise" maxlength="80" aria-label="Exercise name">
+        <button class="save-button" type="submit" style="width: auto;">+ Add</button>
+      </form>
+    </section>
+    <footer class="page-footer"><span>LZ GYMTRAK</span><span>Progress is built one session at a time.</span></footer>
+  </main>
+
+  <div id="rest-timer" hidden>
+    <button type="button" class="rest-btn" id="rest-subtract-15">-15s</button>
+    <span id="rest-seconds">1:30</span>
+    <button type="button" class="rest-btn" id="rest-add-15">+15s</button>
+    <button type="button" class="rest-btn" id="rest-skip">Skip</button>
+  </div>
+
+  <script>
+    const workoutId = {{ workout.id | tojson }};
+    const weightUnit = {{ weight_unit | tojson }};
+
+    async function logSet(exerciseBlock) {
+      const repsInput = exerciseBlock.querySelector(".set-reps-input");
+      const weightInput = exerciseBlock.querySelector(".set-weight-input");
+      const exerciseId = exerciseBlock.dataset.exerciseId;
+      const response = await fetch(`/log/${workoutId}/exercises/${exerciseId}/sets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reps: repsInput.value, weight: weightInput.value }),
+      });
+      if (!response.ok) {
+        window.alert("Couldn't log that set. Check the values and try again.");
+        return;
+      }
+      const loggedSet = await response.json();
+      appendLoggedSet(exerciseBlock, loggedSet);
+      startRestTimer();
+    }
+
+    function appendLoggedSet(exerciseBlock, loggedSet) {
+      const list = exerciseBlock.querySelector("[data-logged-sets]");
+      list.querySelectorAll("[data-undo-set]").forEach((btn) => btn.remove());
+      const row = document.createElement("div");
+      row.className = "logged-set-row";
+      row.dataset.setId = loggedSet.id;
+      row.innerHTML =
+        `<span>Set ${loggedSet.set_number}</span>` +
+        `<span>${loggedSet.reps} reps @ ${loggedSet.weight} ${weightUnit}</span>` +
+        `<button type="button" class="undo-set-btn" data-undo-set>Undo</button>`;
+      list.appendChild(row);
+      const removeBtn = exerciseBlock.querySelector("[data-remove-exercise]");
+      if (removeBtn) removeBtn.remove();
+    }
+
+    async function undoSet(exerciseBlock, row) {
+      const exerciseId = exerciseBlock.dataset.exerciseId;
+      const setId = row.dataset.setId;
+      const response = await fetch(`/log/${workoutId}/exercises/${exerciseId}/sets/${setId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        window.alert("Couldn't undo that set.");
+        return;
+      }
+      row.remove();
+      const list = exerciseBlock.querySelector("[data-logged-sets]");
+      const remainingRows = list.querySelectorAll(".logged-set-row");
+      if (remainingRows.length) {
+        const lastRow = remainingRows[remainingRows.length - 1];
+        if (!lastRow.querySelector("[data-undo-set]")) {
+          const undoBtn = document.createElement("button");
+          undoBtn.type = "button";
+          undoBtn.className = "undo-set-btn";
+          undoBtn.setAttribute("data-undo-set", "");
+          undoBtn.textContent = "Undo";
+          lastRow.appendChild(undoBtn);
+        }
+      } else if (!exerciseBlock.querySelector("[data-remove-exercise]")) {
+        const heading = exerciseBlock.querySelector(".exercise-block-heading");
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "remove-exercise-btn";
+        removeBtn.setAttribute("data-remove-exercise", "");
+        removeBtn.textContent = "Remove";
+        heading.appendChild(removeBtn);
+      }
+    }
+
+    async function removeExercise(exerciseBlock) {
+      const exerciseId = exerciseBlock.dataset.exerciseId;
+      const response = await fetch(`/log/${workoutId}/exercises/${exerciseId}`, { method: "DELETE" });
+      if (!response.ok) {
+        window.alert("Couldn't remove that exercise.");
+        return;
+      }
+      exerciseBlock.remove();
+    }
+
+    function appendExerciseBlock(exercise) {
+      const container = document.querySelector("#exercise-blocks");
+      const block = document.createElement("div");
+      block.className = "exercise-block";
+      block.dataset.exerciseId = exercise.id;
+      block.innerHTML =
+        `<div class="exercise-block-heading"><h3></h3>` +
+        `<button type="button" class="remove-exercise-btn" data-remove-exercise>Remove</button></div>` +
+        `<div class="logged-sets" data-logged-sets></div>` +
+        `<div class="next-set-row">` +
+        `<input type="number" min="1" class="set-reps-input" aria-label="Reps">` +
+        `<input type="number" min="0" step="0.5" class="set-weight-input" aria-label="Weight in ${weightUnit}">` +
+        `<button type="button" class="log-set-btn" data-log-set aria-label="Log set">&#10003;</button>` +
+        `</div>`;
+      block.querySelector("h3").textContent = exercise.name;
+      block.querySelector(".set-reps-input").value = exercise.prefill_reps;
+      block.querySelector(".set-weight-input").value = exercise.prefill_weight;
+      container.appendChild(block);
+    }
+
+    document.addEventListener("click", (event) => {
+      const logBtn = event.target.closest("[data-log-set]");
+      if (logBtn) {
+        logSet(logBtn.closest(".exercise-block"));
+        return;
+      }
+      const undoBtn = event.target.closest("[data-undo-set]");
+      if (undoBtn) {
+        undoSet(undoBtn.closest(".exercise-block"), undoBtn.closest(".logged-set-row"));
+        return;
+      }
+      const removeBtn = event.target.closest("[data-remove-exercise]");
+      if (removeBtn) {
+        removeExercise(removeBtn.closest(".exercise-block"));
+      }
+    });
+
+    document.querySelector("#add-exercise-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.querySelector("#new-exercise-name");
+      const name = input.value.trim();
+      if (!name) return;
+      const response = await fetch(`/log/${workoutId}/exercises`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) {
+        window.alert("Couldn't add that exercise.");
+        return;
+      }
+      const exercise = await response.json();
+      appendExerciseBlock(exercise);
+      input.value = "";
+      input.focus();
+    });
+
+    let restInterval = null;
+    let restSecondsLeft = 0;
+    const restBanner = document.querySelector("#rest-timer");
+    const restSecondsEl = document.querySelector("#rest-seconds");
+
+    function updateRestDisplay() {
+      const clamped = Math.max(restSecondsLeft, 0);
+      const minutes = Math.floor(clamped / 60);
+      const seconds = clamped % 60;
+      restSecondsEl.textContent = `${minutes}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function playRestAlert() {
+      try {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      } catch (err) { /* vibration not supported, ignore */ }
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        const oscillator = ctx.createOscillator();
+        oscillator.frequency.value = 880;
+        oscillator.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+      } catch (err) { /* Web Audio not supported, ignore */ }
+    }
+
+    function startRestTimer(seconds = 90) {
+      restSecondsLeft = seconds;
+      restBanner.hidden = false;
+      updateRestDisplay();
+      if (restInterval) window.clearInterval(restInterval);
+      restInterval = window.setInterval(() => {
+        restSecondsLeft -= 1;
+        updateRestDisplay();
+        if (restSecondsLeft <= 0) {
+          window.clearInterval(restInterval);
+          restInterval = null;
+          playRestAlert();
+          restBanner.hidden = true;
+        }
+      }, 1000);
+    }
+
+    document.querySelector("#rest-add-15").addEventListener("click", () => {
+      restSecondsLeft += 15;
+      updateRestDisplay();
+    });
+    document.querySelector("#rest-subtract-15").addEventListener("click", () => {
+      restSecondsLeft = Math.max(0, restSecondsLeft - 15);
+      updateRestDisplay();
+    });
+    document.querySelector("#rest-skip").addEventListener("click", () => {
+      if (restInterval) window.clearInterval(restInterval);
+      restInterval = null;
+      restBanner.hidden = true;
+    });
+  </script>
+</body>
+</html>
