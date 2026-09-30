@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lz GYMTRAK | Workout log</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  {% if not profile_name %}
+    <dialog class="profile-dialog" id="profile-dialog" aria-labelledby="profile-dialog-ti itle">
+      <p class="eyebrow">LZ GYMTRAK</p>
+      <h2 id="profile-dialog-title">Welcome to GYMTRAK</h2>
+      <p>What should we call you?</p>
+      <form action="{{ url_for('save_profile') }}" method="post">
+        <label for="profile-name">Your name</label>
+        <input class="profile-name-input" id="profile-name" name="name" type="text" maxlength="40" autocomplete="nickname" required autofocus>
+        <button class="save-button" type="submit">Continue <span aria-hidden="true">→</span></button>
+      </form>
+    </dialog>
+  {% endif %}
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}" aria-label="Lz GYMTRAK dashboard">
+      <img class="brand-logo" src="{{ url_for('static', filename='gymtrak-logo.svg', v=2) }}" alt="LZ GYMTRAK">
+    </a>
+    <div class="topbar-note"><span class="status-dot"></span> YOUR TRAINING, IN MOTION</div>
+  </header>
+
+  <main class="page-shell">
+    <section class="welcome-row">
+      <div>
+        <p class="eyebrow">YOUR TRAINING DESK</p>
+        <h1 class="headline-cycle" id="headline-cycle">
+          <span class="headline-message is-active" data-headline-message aria-hidden="false">Train. Track. <span class="headline-accent">Progress.</span></span>
+          {% if profile_name %}
+            <span class="headline-message" data-headline-message aria-hidden="true">Welcome, <span class="headline-accent">{{ profile_name }}</span></span>
+          {% endif %}
+        </h1>
+        <p class="intro">A little consistency adds up. Here's where your work stands.</p>
+      </div>
+      <a class="primary-link" href="#log-workout"><span aria-hidden="true">+</span> Log a workout</a>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="messages" role="status">
+          {% for category, message in messages %}
+            <p class="message {{ category }}">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="stats-grid" aria-label="Workout statistics">
+      <article class="stat-panel stat-dark">
+        <p class="stat-label">WORKOUTS THIS MONTH</p>
+        <p class="stat-value">{{ workouts_this_month }}<span> sessions</span></p>
+        <p class="stat-foot">{{ total_workouts }} saved all time</p>
+      </article>
+      <article class="stat-panel stat-pink">
+        <p class="stat-label">GYM VISITS THIS MONTH</p>
+        <p class="stat-value">{{ visits_this_month }}<span> days</span></p>
+        <p class="stat-foot">Distinct days you trained</p>
+      </article>
+      <article class="stat-panel stat-light">
+        <p class="stat-label">CURRENT STREAK</p>
+        <p class="stat-value">{{ current_streak }}<span> days</span></p>
+        <p class="stat-foot">Consecutive days with a workout</p>
+      </article>
+    </section>
+
+    <div class="content-grid">
+      <section class="section-block history-section" id="history">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">THE RECORD</p>
+            <h2>Workout history</h2>
+          </div>
+          <form class="search-form" action="{{ url_for('dashboard') }}#history" method="get" role="search">
+            <label class="visually-hidden" for="workout-search">Search workouts</label>
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="workout-search" name="search" type="search" placeholder="Find a workout" value="{{ search_term }}">
+            {% if search_term %}<a class="clear-search" href="{{ url_for('dashboard') }}#history" aria-label="Clear search">×</a>{% endif %}
+          </form>
+        </div>
+
+        {% if workouts %}
+          <div class="workout-list">
+            {% for workout in workouts %}
+              <article class="workout-row">
+                <div class="workout-date"><span>{{ workout.workout_date[5:7] }}/{{ workout.workout_date[8:10] }}</span><small>{{ workout.workout_date[:4] }}</small></div>
+                <div class="workout-info">
+                  <h3>{{ workout.name }}</h3>
+                  <p>{{ workout.exercise_details }}</p>
+                </div>
+                <div class="workout-actions">
+                  <a href="{{ url_for('edit_workout', workout_id=workout.id) }}">Edit</a>
+                  <form action="{{ url_for('delete_workout', workout_id=workout.id) }}" method="post" data-delete-workout>
+                    <button class="delete-workout" type="submit">Delete</button>
+                  </form>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+          {% if workouts|length == 20 %}<p class="list-note">Showing the latest 20 workouts.</p>{% endif %}
+        {% else %}
+          <div class="empty-state">
+            <span class="empty-mark" aria-hidden="true">↗</span>
+            <h3>{% if search_term %}No matching workouts{% else %}Your first workout starts here{% endif %}</h3>
+            <p>{% if search_term %}Try a different workout or exercise name, or clear your search.{% else %}Log a session and it will show up here.{% endif %}</p>
+          </div>
+        {% endif %}
+      </section>
+
+      <aside class="side-column">
+        <section class="section-block records-section">
+          <p class="eyebrow">HEAVIEST WEIGHT LOGGED</p>
+          <h2>Personal records</h2>
+          {% if personal_records %}
+            <ul class="record-list">
+              {% for record in personal_records %}
+                <li><span>{{ record.name }}</span><strong>{{ "%.1f"|format(record.best_weight) }} <small>kg</small></strong></li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted-copy">Your first lift will set the bar.</p>
+          {% endif %}
+        </section>
+
+        <section class="section-block log-section" id="log-workout">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">MAKE IT COUNT</p><h2>Log a workout</h2></div>
+            <span class="log-symbol" aria-hidden="true">＋</span>
+          </div>
+          <form action="{{ url_for('dashboard') }}" method="post" id="workout-form">
+            <div class="form-row">
+              <label>Workout name<input name="workout_name" placeholder="e.g. Upper body" maxlength="80" required></label>
+              <label>Date<input name="workout_date" type="date" value="{{ today }}" required></label>
+            </div>
+            <div class="exercise-heading"><span>EXERCISE</span><span>SETS</span><span>REPS</span><span>KG</span></div>
+            <div id="exercise-rows">
+              {% for row in range(3) %}
+                <div class="exercise-row">
+                  <input name="exercise_name" placeholder="Exercise" maxlength="80" aria-label="Exercise name">
+                  <input name="sets" type="number" min="1" value="3" aria-label="Sets">
+                  <input name="reps" type="number" min="1" value="8" aria-label="Reps">
+                  <input name="weight" type="number" min="0" step="0.5" value="0" aria-label="Weight in kilograms">
+                </div>
+              {% endfor %}
+            </div>
+            <button class="add-row" type="button" id="add-exercise">+ Add another exercise</button>
+            <button class="save-button" type="submit">Save workout <span aria-hidden="true">→</span></button>
+          </form>
+        </section>
+      </aside>
+    </div>
+    <footer class="page-footer"><span>LZ GYMTRAK</span><span>Progress is built one session at a time.</span></footer>
+  </main>
+
+  <template id="exercise-row-template">
+    <div class="exercise-row">
+      <input name="exercise_name" placeholder="Exercise" maxlength="80" aria-label="Exercise name">
+      <input name="sets" type="number" min="1" value="3" aria-label="Sets">
+      <input name="reps" type="number" min="1" value="8" aria-label="Reps">
+      <input name="weight" type="number" min="0" step="0.5" value="0" aria-label="Weight in kilograms">
+    </div>
+  </template>
+  <script>
+    const profileDialog = document.querySelector("#profile-dialog");
+    if (profileDialog) profileDialog.showModal();
+
+    document.querySelectorAll("[data-delete-workout]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (!window.confirm("Delete this workout and its exercises?")) event.preventDefault();
+      });
+    });
+
+    const headlineMessages = [...document.querySelectorAll("[data-headline-message]")];
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (headlineMessages.length > 1 && !reduceMotion) {
+      let activeHeadline = 0;
+      window.setInterval(() => {
+        headlineMessages[activeHeadline].classList.remove("is-active");
+        headlineMessages[activeHeadline].setAttribute("aria-hidden", "true");
+        activeHeadline = (activeHeadline + 1) % headlineMessages.length;
+        headlineMessages[activeHeadline].classList.add("is-active");
+        headlineMessages[activeHeadline].setAttribute("aria-hidden", "false");
+      }, 4000);
+    }
+
+    const exerciseRows = document.querySelector("#exercise-rows");
+    const rowTemplate = document.querySelector("#exercise-row-template");
+    document.querySelector("#add-exercise").addEventListener("click", () => {
+      exerciseRows.append(rowTemplate.content.cloneNode(true));
+      exerciseRows.lastElementChild.querySelector("input").focus();
+    });
+  </script>
+</body>
+</html>
