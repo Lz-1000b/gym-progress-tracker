@@ -41,33 +41,56 @@
     {% endwith %}
 
     {% if recent_workouts %}
-      <section class="section-block log-section">
-        <div class="section-heading compact-heading">
-          <div><p class="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2>Repeat a workout</h2></div>
-        </div>
-        {% for past in recent_workouts %}
+      <div class="workout-fork">
+        <section class="section-block log-section fork-pane">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2>Repeat a workout</h2></div>
+          </div>
+          {% for past in recent_workouts %}
+            <form action="{{ url_for('new_workout') }}" method="post">
+              <input type="hidden" name="workout_name" value="{{ past.name }}">
+              <input type="hidden" name="workout_date" value="{{ today }}">
+              <input type="hidden" name="repeat_workout_id" value="{{ past.id }}">
+              <button class="save-button repeat-button" type="submit">
+                <span class="repeat-info">
+                  <strong>{{ past.name }}</strong>
+                  <small>Last done {{ past.workout_date[5:7] }}/{{ past.workout_date[8:10] }}</small>
+                </span>
+                <span aria-hidden="true">&rarr;</span>
+              </button>
+            </form>
+          {% endfor %}
+        </section>
+
+        <div class="fork-divider" aria-hidden="true"><span>OR</span></div>
+
+        <section class="section-block log-section fork-pane">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">NEW SESSION</p><h2>Start something new</h2></div>
+          </div>
           <form action="{{ url_for('new_workout') }}" method="post">
-            <input type="hidden" name="workout_name" value="{{ past.name }}">
-            <input type="hidden" name="workout_date" value="{{ today }}">
-            <input type="hidden" name="repeat_workout_id" value="{{ past.id }}">
-            <button class="save-button" type="submit">{{ past.name }} <span aria-hidden="true">&rarr;</span></button>
+            <div class="form-row">
+              <label>Workout name<input name="workout_name" placeholder="e.g. Upper body" maxlength="80" required autofocus></label>
+              <label>Date<input name="workout_date" type="date" value="{{ today }}" required></label>
+            </div>
+            <button class="save-button" type="submit">Start workout <span aria-hidden="true">&rarr;</span></button>
           </form>
-        {% endfor %}
+        </section>
+      </div>
+    {% else %}
+      <section class="section-block log-section new-session-solo">
+        <div class="section-heading compact-heading">
+          <div><p class="eyebrow">NEW SESSION</p><h2>Start something new</h2></div>
+        </div>
+        <form action="{{ url_for('new_workout') }}" method="post">
+          <div class="form-row">
+            <label>Workout name<input name="workout_name" placeholder="e.g. Upper body" maxlength="80" required autofocus></label>
+            <label>Date<input name="workout_date" type="date" value="{{ today }}" required></label>
+          </div>
+          <button class="save-button" type="submit">Start workout <span aria-hidden="true">&rarr;</span></button>
+        </form>
       </section>
     {% endif %}
-
-    <section class="section-block log-section">
-      <div class="section-heading compact-heading">
-        <div><p class="eyebrow">{% if recent_workouts %}OR{% else %}NEW SESSION{% endif %}</p><h2>Start something new</h2></div>
-      </div>
-      <form action="{{ url_for('new_workout') }}" method="post">
-        <div class="form-row">
-          <label>Workout name<input name="workout_name" placeholder="e.g. Upper body" maxlength="80" required autofocus></label>
-          <label>Date<input name="workout_date" type="date" value="{{ today }}" required></label>
-        </div>
-        <button class="save-button" type="submit">Start workout <span aria-hidden="true">&rarr;</span></button>
-      </form>
-    </section>
     <footer class="page-footer"><span>LZ GYMTRAK</span><span>Progress is built one session at a time.</span></footer>
   </main>
 </body>

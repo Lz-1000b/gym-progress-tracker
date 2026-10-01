@@ -42,19 +42,6 @@
 
     <section class="section-block log-section">
       <div class="section-heading compact-heading">
-        <div><p class="eyebrow">SESSION DETAILS</p><h2>Name &amp; date</h2></div>
-      </div>
-      <form action="{{ url_for('log_workout', workout_id=workout.id) }}" method="post">
-        <div class="form-row">
-          <label>Workout name<input name="workout_name" value="{{ workout.name }}" maxlength="80" required></label>
-          <label>Date<input name="workout_date" type="date" value="{{ workout.workout_date }}" required></label>
-        </div>
-        <button class="save-button" type="submit">Save details <span aria-hidden="true">&rarr;</span></button>
-      </form>
-    </section>
-
-    <section class="section-block log-section">
-      <div class="section-heading compact-heading">
         <div><p class="eyebrow">{{ weight_unit|upper }} &middot; TAP THE CHECK TO LOG A SET</p><h2>Exercises</h2></div>
       </div>
 
@@ -72,10 +59,11 @@
                 <div class="logged-set-row" data-set-id="{{ s.id }}">
                   <span>Set {{ s.set_number }}</span>
                   <span>{{ s.reps }} reps @ {{ s.weight }} {{ weight_unit }}</span>
-                  {% if loop.last %}<button type="button" class="undo-set-btn" data-undo-set>Undo</button>{% endif %}
+                  <span class="set-row-action">{% if loop.last %}<button type="button" class="undo-set-btn" data-undo-set>Undo</button>{% endif %}</span>
                 </div>
               {% endfor %}
             </div>
+            <p class="set-hint">Suggested: {{ exercise.prefill_reps }} reps @ {{ exercise.prefill_weight }} {{ weight_unit }}</p>
             <div class="next-set-row">
               <input type="number" min="1" class="set-reps-input" value="{{ exercise.prefill_reps }}" aria-label="Reps">
               <input type="number" min="0" step="0.5" class="set-weight-input" value="{{ exercise.prefill_weight }}" aria-label="Weight in {{ weight_unit }}">
@@ -85,19 +73,43 @@
         {% endfor %}
       </div>
 
+      {% if not exercises %}
+        <div class="empty-state">
+          <span class="empty-mark" aria-hidden="true">+</span>
+          <h3>No exercises yet</h3>
+          <p>Add your first exercise below to start logging sets.</p>
+        </div>
+      {% endif %}
+
       <form id="add-exercise-form" class="add-exercise-row">
         <input type="text" id="new-exercise-name" placeholder="Add an exercise" maxlength="80" aria-label="Exercise name">
-        <button class="save-button" type="submit" style="width: auto;">+ Add</button>
+        <button class="save-button" type="submit">+ Add</button>
+      </form>
+    </section>
+
+    <section class="section-block log-section">
+      <div class="section-heading compact-heading">
+        <div><h2>Name &amp; date</h2></div>
+      </div>
+      <form action="{{ url_for('log_workout', workout_id=workout.id) }}" method="post">
+        <div class="form-row">
+          <label>Workout name<input name="workout_name" value="{{ workout.name }}" maxlength="80" required></label>
+          <label>Date<input name="workout_date" type="date" value="{{ workout.workout_date }}" required></label>
+        </div>
+        <button class="save-button" type="submit">Save details <span aria-hidden="true">&rarr;</span></button>
       </form>
     </section>
     <footer class="page-footer"><span>LZ GYMTRAK</span><span>Progress is built one session at a time.</span></footer>
   </main>
 
   <div id="rest-timer" hidden>
-    <button type="button" class="rest-btn" id="rest-subtract-15">-15s</button>
-    <span id="rest-seconds">1:30</span>
-    <button type="button" class="rest-btn" id="rest-add-15">+15s</button>
-    <button type="button" class="rest-btn" id="rest-skip">Skip</button>
+    <span class="rest-label">Rest</span>
+    <div class="rest-controls">
+      <button type="button" class="rest-btn" id="rest-subtract-15">-15s</button>
+      <span id="rest-seconds">1:30</span>
+      <button type="button" class="rest-btn" id="rest-add-15">+15s</button>
+      <button type="button" class="rest-btn" id="rest-skip">Skip</button>
+    </div>
   </div>
 
   <script>
@@ -131,10 +143,12 @@
       row.innerHTML =
         `<span>Set ${loggedSet.set_number}</span>` +
         `<span>${loggedSet.reps} reps @ ${loggedSet.weight} ${weightUnit}</span>` +
-        `<button type="button" class="undo-set-btn" data-undo-set>Undo</button>`;
+        `<span class="set-row-action"><button type="button" class="undo-set-btn" data-undo-set>Undo</button></span>`;
       list.appendChild(row);
       const removeBtn = exerciseBlock.querySelector("[data-remove-exercise]");
       if (removeBtn) removeBtn.remove();
+      const hint = exerciseBlock.querySelector(".set-hint");
+      if (hint) hint.textContent = `Suggested: ${loggedSet.reps} reps @ ${loggedSet.weight} ${weightUnit}`;
     }
 
     async function undoSet(exerciseBlock, row) {
@@ -158,7 +172,7 @@
           undoBtn.className = "undo-set-btn";
           undoBtn.setAttribute("data-undo-set", "");
           undoBtn.textContent = "Undo";
-          lastRow.appendChild(undoBtn);
+          lastRow.querySelector(".set-row-action").appendChild(undoBtn);
         }
       } else if (!exerciseBlock.querySelector("[data-remove-exercise]")) {
         const heading = exerciseBlock.querySelector(".exercise-block-heading");
@@ -190,6 +204,7 @@
         `<div class="exercise-block-heading"><h3></h3>` +
         `<button type="button" class="remove-exercise-btn" data-remove-exercise>Remove</button></div>` +
         `<div class="logged-sets" data-logged-sets></div>` +
+        `<p class="set-hint"></p>` +
         `<div class="next-set-row">` +
         `<input type="number" min="1" class="set-reps-input" aria-label="Reps">` +
         `<input type="number" min="0" step="0.5" class="set-weight-input" aria-label="Weight in ${weightUnit}">` +
@@ -198,6 +213,7 @@
       block.querySelector("h3").textContent = exercise.name;
       block.querySelector(".set-reps-input").value = exercise.prefill_reps;
       block.querySelector(".set-weight-input").value = exercise.prefill_weight;
+      block.querySelector(".set-hint").textContent = `Suggested: ${exercise.prefill_reps} reps @ ${exercise.prefill_weight} ${weightUnit}`;
       container.appendChild(block);
     }
 
