@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lz GYMTRAK | Workout log</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -29,7 +30,7 @@
         </h1>
         <p class="intro">A little consistency adds up. Here's where your work stands.</p>
       </div>
-      <a class="primary-link" href="#log-workout"><span aria-hidden="true">+</span> Log a workout</a>
+      <a class="primary-link" href="{{ url_for('new_workout') }}"><span aria-hidden="true">+</span> Log a workout</a>
     </section>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -85,7 +86,7 @@
                   <p>{{ workout.exercise_details }}</p>
                 </div>
                 <div class="workout-actions">
-                  <a href="{{ url_for('edit_workout', workout_id=workout.id) }}">Edit</a>
+                  <a href="{{ url_for('log_workout', workout_id=workout.id) }}">Edit</a>
                   <form action="{{ url_for('delete_workout', workout_id=workout.id) }}" method="post" data-delete-workout>
                     <button class="delete-workout" type="submit">Delete</button>
                   </form>
@@ -117,45 +118,11 @@
             <p class="muted-copy">Your first lift will set the bar.</p>
           {% endif %}
         </section>
-
-        <section class="section-block log-section" id="log-workout">
-          <div class="section-heading compact-heading">
-            <div><p class="eyebrow">MAKE IT COUNT</p><h2>Log a workout</h2></div>
-            <span class="log-symbol" aria-hidden="true">＋</span>
-          </div>
-          <form action="{{ url_for('dashboard') }}" method="post" id="workout-form">
-            <div class="form-row">
-              <label>Workout name<input name="workout_name" placeholder="e.g. Upper body" maxlength="80" required></label>
-              <label>Date<input name="workout_date" type="date" value="{{ today }}" required></label>
-            </div>
-            <div class="exercise-heading"><span>EXERCISE</span><span>SETS</span><span>REPS</span><span>{{ weight_unit|upper }}</span></div>
-            <div id="exercise-rows">
-              {% for row in range(3) %}
-                <div class="exercise-row">
-                  <input name="exercise_name" placeholder="Exercise" maxlength="80" aria-label="Exercise name">
-                  <input name="sets" type="number" min="1" value="3" aria-label="Sets">
-                  <input name="reps" type="number" min="1" value="8" aria-label="Reps">
-                  <input name="weight" type="number" min="0" step="0.5" value="0" aria-label="Weight in kilograms">
-                </div>
-              {% endfor %}
-            </div>
-            <button class="add-row" type="button" id="add-exercise">+ Add another exercise</button>
-            <button class="save-button" type="submit">Save workout <span aria-hidden="true">→</span></button>
-          </form>
-        </section>
       </aside>
     </div>
     <footer class="page-footer"><span>LZ GYMTRAK</span><span>Progress is built one session at a time.</span></footer>
   </main>
 
-  <template id="exercise-row-template">
-    <div class="exercise-row">
-      <input name="exercise_name" placeholder="Exercise" maxlength="80" aria-label="Exercise name">
-      <input name="sets" type="number" min="1" value="3" aria-label="Sets">
-      <input name="reps" type="number" min="1" value="8" aria-label="Reps">
-      <input name="weight" type="number" min="0" step="0.5" value="0" aria-label="Weight in kilograms">
-    </div>
-  </template>
   <script>
     document.querySelectorAll("[data-delete-workout]").forEach((form) => {
       form.addEventListener("submit", (event) => {
@@ -175,13 +142,6 @@
         headlineMessages[activeHeadline].setAttribute("aria-hidden", "false");
       }, 4000);
     }
-
-    const exerciseRows = document.querySelector("#exercise-rows");
-    const rowTemplate = document.querySelector("#exercise-row-template");
-    document.querySelector("#add-exercise").addEventListener("click", () => {
-      exerciseRows.append(rowTemplate.content.cloneNode(true));
-      exerciseRows.lastElementChild.querySelector("input").focus();
-    });
   </script>
 </body>
 </html>
