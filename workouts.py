@@ -1,5 +1,3 @@
-from datetime import date, timedelta
-
 from users import format_weight, kg_to_display
 
 
@@ -8,20 +6,6 @@ HAS_LOGGED_SETS = """EXISTS (
     JOIN workout_exercises we ON we.id = es.workout_exercise_id
     WHERE we.workout_id = w.id
 )"""
-
-
-def get_current_streak(workout_dates):
-    """Count consecutive calendar days with a workout, starting today or yesterday."""
-    recorded_days = {date.fromisoformat(workout_date) for workout_date in workout_dates}
-    streak_day = date.today()
-    if streak_day not in recorded_days:
-        streak_day -= timedelta(days=1)
-
-    streak = 0
-    while streak_day in recorded_days:
-        streak += 1
-        streak_day -= timedelta(days=1)
-    return streak
 
 
 def recent_distinct_workouts(connection, user, limit=3):
@@ -192,54 +176,3 @@ def search_workouts(connection, user, search_term, unit):
         }
         for row in workout_rows
     ]
-
-
-def get_personal_records(connection, user, unit):
-    """This user's three heaviest lifts, one per exercise, in display units."""
-    record_rows = connection.execute(
-        """SELECT we.name, MAX(es.weight) AS best_weight
-           FROM exercise_sets AS es
-           JOIN workout_exercises AS we ON we.id = es.workout_exercise_id
-           JOIN workouts AS w ON w.id = we.workout_id
-           WHERE w.user_id = ?
-           GROUP BY LOWER(we.name)
-           ORDER BY best_weight DESC, we.name COLLATE NOCASE
-           LIMIT 3""",
-        (user,),
-    ).fetchall()
-    return [
-        {"name": row["name"], "best_weight": kg_to_display(row["best_weight"], unit)}
-        for row in record_rows
-    ]
-
-
-def get_dashboard_stats(connection, user):
-    """Month counts, total count, and current streak over this user's logged workouts."""
-    all_workout_dates = [
-        row[0]
-        for row in connection.execute(
-            f"""SELECT DISTINCT workout_date FROM workouts AS w
-                WHERE user_id = ? AND {HAS_LOGGED_SETS}
-                ORDER BY workout_date DESC""",
-            (user,),
-        ).fetchall()
-    ]
-    month = date.today().strftime("%Y-%m")
-    month_stats = connection.execute(
-        f"""SELECT COUNT(*) AS workouts,
-                  COUNT(DISTINCT workout_date) AS visits
-           FROM workouts AS w
-           WHERE user_id = ? AND {HAS_LOGGED_SETS} AND substr(workout_date, 1, 7) = ?""",
-        (user, month),
-    ).fetchone()
-    workout_count = connection.execute(
-        f"SELECT COUNT(*) FROM workouts AS w WHERE user_id = ? AND {HAS_LOGGED_SETS}",
-        (user,),
-    ).fetchone()[0]
-
-    return {
-        "workouts_this_month": month_stats["workouts"],
-        "visits_this_month": month_stats["visits"],
-        "current_streak": get_current_streak(all_workout_dates),
-        "total_workouts": workout_count,
-    }

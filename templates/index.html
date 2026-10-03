@@ -43,29 +43,58 @@
       {% endif %}
     {% endwith %}
 
-    <section class="stats-grid" aria-label="Workout statistics">
-      <article class="stat-panel stat-dark">
-        <p class="stat-label">WORKOUTS THIS MONTH</p>
-        <p class="stat-value">{{ workouts_this_month }}<span> sessions</span></p>
-        <p class="stat-foot">{{ total_workouts }} saved all time</p>
-      </article>
-      <article class="stat-panel stat-pink">
-        <p class="stat-label">GYM VISITS THIS MONTH</p>
-        <p class="stat-value">{{ visits_this_month }}<span> days</span></p>
-        <p class="stat-foot">Distinct days you trained</p>
-      </article>
-      <article class="stat-panel stat-light">
-        <p class="stat-label">CURRENT STREAK</p>
-        <p class="stat-value">{{ current_streak }}<span> days</span></p>
-        <p class="stat-foot">Consecutive days with a workout</p>
-      </article>
+    <section class="section-block log-section week-section" aria-label="This week">
+      <div class="week-summary">
+        <div>
+          <p class="eyebrow">THIS WEEK</p>
+          <h2>{{ week.days_trained }} of {{ week.goal }} <span>{{ "day" if week.goal == 1 else "days" }} trained</span></h2>
+        </div>
+        <p class="week-streak"><strong>{{ week.streak }}</strong> week streak</p>
+      </div>
+
+      <ol class="week-strip">
+        {% for day in week.days %}
+          <li class="week-day{% if day.trained %} is-trained{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_future %} is-future{% endif %}">
+            <span class="week-day-label">{{ day.label }}</span>
+            <span class="week-dot" aria-hidden="true">{% if day.trained %}&#10003;{% endif %}</span>
+            <span class="visually-hidden">{% if day.trained %}trained{% elif day.is_future %}upcoming{% else %}rest day{% endif %}{% if day.is_today %}, today{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ol>
+
+      <p class="week-note">
+        {% if week.remaining == 0 %}Target hit for the week.{% else %}{{ week.remaining }} more to hit your target.{% endif %}
+        Rest days don't break your streak.
+        {% if last_workout %}
+          <span>{% if last_workout.days_ago == 0 %}Trained today{% elif last_workout.days_ago == 1 %}Last trained yesterday{% else %}Last trained {{ last_workout.days_ago }} days ago{% endif %}: {{ last_workout.name }}.</span>
+        {% endif %}
+      </p>
+
+      <details class="goal-editor">
+        <summary>Change weekly target</summary>
+        <form action="{{ url_for('update_weekly_goal') }}" method="post" class="goal-choices" aria-label="Days per week">
+          {% for choice in weekly_goal_choices %}
+            <button type="submit" name="weekly_goal" value="{{ choice }}" class="goal-choice{% if choice == week.goal %} is-current{% endif %}" aria-label="{{ choice }} {{ 'day' if choice == 1 else 'days' }} a week"{% if choice == week.goal %} aria-current="true"{% endif %}>{{ choice }}</button>
+          {% endfor %}
+        </form>
+      </details>
+    </section>
+
+    <section class="stats-grid" aria-label="This week compared with last week">
+      {% for stat in week_comparison %}
+        <article class="stat-panel {{ ['stat-dark', 'stat-pink', 'stat-light'][loop.index0] }}">
+          <p class="stat-label">{{ stat.label }}</p>
+          <p class="stat-value">{{ stat.value }}<span> {{ stat.unit }}</span></p>
+          <p class="stat-foot change-{{ stat.change.direction }}">{{ stat.change.text }}</p>
+        </article>
+      {% endfor %}
     </section>
 
     <div class="content-grid">
       <section class="section-block history-section" id="history">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">THE RECORD</p>
+            <p class="eyebrow">THE RECORD &middot; {{ total_workouts }} SAVED</p>
             <h2>Workout history</h2>
           </div>
           <form class="search-form" action="{{ url_for('dashboard') }}#history" method="get" role="search">
@@ -105,17 +134,66 @@
       </section>
 
       <aside class="side-column">
-        <section class="section-block records-section">
-          <p class="eyebrow">HEAVIEST WEIGHT LOGGED</p>
+        <section class="section-block log-section calendar-section">
+          <p class="eyebrow">{{ calendar.days_trained }} {{ "DAY" if calendar.days_trained == 1 else "DAYS" }} TRAINED</p>
+          <h2>{{ calendar.title }}</h2>
+          <div class="month-grid" role="img" aria-label="{{ calendar.days_trained }} training {{ 'day' if calendar.days_trained == 1 else 'days' }} in {{ calendar.title }}">
+            {% for label in ["M", "T", "W", "T", "F", "S", "S"] %}<span class="month-weekday">{{ label }}</span>{% endfor %}
+            {% for calendar_week in calendar.weeks %}
+              {% for day in calendar_week %}
+                {% if day.in_month %}
+                  <span class="month-day{% if day.trained %} is-trained{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_future %} is-future{% endif %}">{{ day.day }}</span>
+                {% else %}
+                  <span></span>
+                {% endif %}
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="section-block log-section records-section">
+          <p class="eyebrow">LATEST BESTS BEATEN</p>
           <h2>Personal records</h2>
+          {% if recent_records %}
+            <ul class="record-list">
+              {% for record in recent_records %}
+                <li>
+                  <span>{{ record.name }}<small class="record-date">{{ record.date_text }}</small></span>
+                  <strong><small>{{ record.previous }} &rarr;</small> {{ record.weight }} <small>{{ weight_unit }}</small></strong>
+                </li>
+              {% endfor %}
+            </ul>
+          {% elif personal_records %}
+            <p class="muted-copy">Beat one of your bests and it will show up here.</p>
+          {% else %}
+            <p class="muted-copy">Your first lift will set the bar.</p>
+          {% endif %}
           {% if personal_records %}
+            <p class="record-subheading">HEAVIEST EVER</p>
             <ul class="record-list">
               {% for record in personal_records %}
                 <li><span>{{ record.name }}</span><strong>{{ "%.1f"|format(record.best_weight) }} <small>{{ weight_unit }}</small></strong></li>
               {% endfor %}
             </ul>
+          {% endif %}
+        </section>
+
+        <section class="section-block log-section trends-section">
+          <p class="eyebrow">BEST WEIGHT PER SESSION</p>
+          <h2>Exercise trends</h2>
+          {% if trends %}
+            <ul class="trend-list">
+              {% for trend in trends %}
+                <li>
+                  <span class="trend-name">{{ trend.name }}<small>{{ trend.latest }} {{ weight_unit }}</small></span>
+                  <svg class="trend-line" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="{{ trend.points }}" /></svg>
+                  <span class="trend-change change-{{ trend.direction }}">{{ trend.change_text }}</span>
+                  <span class="visually-hidden">From {{ trend.first }} to {{ trend.latest }} {{ weight_unit }} over the last {{ trend.session_count }} sessions.</span>
+                </li>
+              {% endfor %}
+            </ul>
           {% else %}
-            <p class="muted-copy">Your first lift will set the bar.</p>
+            <p class="muted-copy">Train an exercise twice and its trend will show up here.</p>
           {% endif %}
         </section>
       </aside>

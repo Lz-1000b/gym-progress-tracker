@@ -8,6 +8,28 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  {% set weight_step = 5 if weight_unit == "lb" else 2.5 %}
+  {% macro next_set_row(reps, weight) %}
+            <div class="next-set-row">
+              <div class="set-field">
+                <span class="set-field-label" aria-hidden="true">Reps</span>
+                <div class="stepper">
+                  <button type="button" class="step-btn" data-step="-1" aria-label="One fewer rep">&minus;</button>
+                  <input type="number" inputmode="numeric" enterkeyhint="next" min="1" step="1" class="set-reps-input" value="{{ reps }}" aria-label="Reps">
+                  <button type="button" class="step-btn" data-step="1" aria-label="One more rep">+</button>
+                </div>
+              </div>
+              <div class="set-field">
+                <span class="set-field-label" aria-hidden="true">{{ weight_unit }}</span>
+                <div class="stepper">
+                  <button type="button" class="step-btn" data-step="-{{ weight_step }}" aria-label="{{ weight_step }} {{ weight_unit }} lighter">&minus;</button>
+                  <input type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" class="set-weight-input" value="{{ weight }}" aria-label="Weight in {{ weight_unit }}">
+                  <button type="button" class="step-btn" data-step="{{ weight_step }}" aria-label="{{ weight_step }} {{ weight_unit }} heavier">+</button>
+                </div>
+              </div>
+              <button type="button" class="log-set-btn" data-log-set><span aria-hidden="true">&#10003;</span> Log set</button>
+            </div>
+  {% endmacro %}
   <header class="topbar">
     <a class="brand" href="{{ url_for('dashboard') }}" aria-label="Lz GYMTRAK dashboard">
       <img class="brand-logo" src="{{ url_for('static', filename='gymtrak-logo.svg', v=2) }}" alt="LZ GYMTRAK">
@@ -42,7 +64,7 @@
 
     <section class="section-block log-section">
       <div class="section-heading compact-heading">
-        <div><p class="eyebrow">{{ weight_unit|upper }} &middot; TAP THE CHECK TO LOG A SET</p><h2>Exercises</h2></div>
+        <div><p class="eyebrow">{{ weight_unit|upper }} &middot; TAP LOG SET AS YOU FINISH EACH ONE</p><h2>Exercises</h2></div>
       </div>
 
       <div id="exercise-blocks">
@@ -64,11 +86,7 @@
               {% endfor %}
             </div>
             <p class="set-hint">Suggested: {{ exercise.prefill_reps }} reps @ {{ exercise.prefill_weight }} {{ weight_unit }}</p>
-            <div class="next-set-row">
-              <input type="number" min="1" class="set-reps-input" value="{{ exercise.prefill_reps }}" aria-label="Reps">
-              <input type="number" min="0" step="0.5" class="set-weight-input" value="{{ exercise.prefill_weight }}" aria-label="Weight in {{ weight_unit }}">
-              <button type="button" class="log-set-btn" data-log-set aria-label="Log set">&#10003;</button>
-            </div>
+            {{ next_set_row(exercise.prefill_reps, exercise.prefill_weight) }}
           </div>
         {% endfor %}
       </div>
@@ -111,6 +129,8 @@
       <button type="button" class="rest-btn" id="rest-skip">Skip</button>
     </div>
   </div>
+
+  <template id="next-set-row-template">{{ next_set_row("", "") }}</template>
 
   <script>
     const workoutId = {{ workout.id | tojson }};
@@ -204,12 +224,8 @@
         `<div class="exercise-block-heading"><h3></h3>` +
         `<button type="button" class="remove-exercise-btn" data-remove-exercise>Remove</button></div>` +
         `<div class="logged-sets" data-logged-sets></div>` +
-        `<p class="set-hint"></p>` +
-        `<div class="next-set-row">` +
-        `<input type="number" min="1" class="set-reps-input" aria-label="Reps">` +
-        `<input type="number" min="0" step="0.5" class="set-weight-input" aria-label="Weight in ${weightUnit}">` +
-        `<button type="button" class="log-set-btn" data-log-set aria-label="Log set">&#10003;</button>` +
-        `</div>`;
+        `<p class="set-hint"></p>`;
+      block.appendChild(document.querySelector("#next-set-row-template").content.cloneNode(true));
       block.querySelector("h3").textContent = exercise.name;
       block.querySelector(".set-reps-input").value = exercise.prefill_reps;
       block.querySelector(".set-weight-input").value = exercise.prefill_weight;
@@ -217,7 +233,22 @@
       container.appendChild(block);
     }
 
+    // Move to the next multiple of the step, so 102.5 + 5 lands on 105 rather than 107.5.
+    function stepInput(input, amount) {
+      const size = Math.abs(amount);
+      const current = parseFloat(input.value) || 0;
+      const next = amount > 0
+        ? (Math.floor(current / size + 1e-9) + 1) * size
+        : (Math.ceil(current / size - 1e-9) - 1) * size;
+      input.value = Number(Math.max(Number(input.min), next).toFixed(2));
+    }
+
     document.addEventListener("click", (event) => {
+      const stepBtn = event.target.closest("[data-step]");
+      if (stepBtn) {
+        stepInput(stepBtn.closest(".stepper").querySelector("input"), Number(stepBtn.dataset.step));
+        return;
+      }
       const logBtn = event.target.closest("[data-log-set]");
       if (logBtn) {
         logSet(logBtn.closest(".exercise-block"));
@@ -231,6 +262,33 @@
       const removeBtn = event.target.closest("[data-remove-exercise]");
       if (removeBtn) {
         removeExercise(removeBtn.closest(".exercise-block"));
+      }
+    });
+
+    // Select the whole value on focus so typing replaces it instead of needing a delete first.
+    document.addEventListener("focusin", (event) => {
+      const input = event.target.closest(".next-set-row input");
+      if (!input) return;
+      input.dataset.valueOnFocus = input.value;
+      window.setTimeout(() => input.select(), 0);
+    });
+
+    document.addEventListener("focusout", (event) => {
+      const input = event.target.closest(".next-set-row input");
+      if (input && input.value.trim() === "") input.value = input.dataset.valueOnFocus || input.min;
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const input = event.target.closest(".next-set-row input");
+      if (!input) return;
+      event.preventDefault();
+      const exerciseBlock = input.closest(".exercise-block");
+      if (input.classList.contains("set-reps-input")) {
+        exerciseBlock.querySelector(".set-weight-input").focus();
+      } else {
+        input.blur();
+        logSet(exerciseBlock);
       }
     });
 

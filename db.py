@@ -65,6 +65,11 @@ def initialize_database():
                 reps INTEGER NOT NULL,
                 weight REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id TEXT PRIMARY KEY,
+                weekly_goal INTEGER NOT NULL
+            );
             """
         )
         try:
