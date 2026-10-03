@@ -4,20 +4,33 @@ from datetime import date, timedelta
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 from db import connect_to_database, initialize_database
+from stats import (
+    count_workouts,
+    exercise_trends,
+    get_exercise_daily_bests,
+    get_last_workout,
+    get_personal_records,
+    get_training_days,
+    get_week_comparison,
+    month_calendar,
+    recent_records,
+    week_overview,
+)
 from users import (
     USERS,
+    WEEKLY_GOAL_CHOICES,
     WEIGHT_UNITS,
     current_user,
     display_to_kg,
     format_weight,
+    get_weekly_goal,
     kg_to_display,
+    set_weekly_goal,
 )
 from workouts import (
     copy_exercises,
-    get_dashboard_stats,
     get_owned_exercise,
     get_owned_workout,
-    get_personal_records,
     get_set_prefill,
     get_workout_exercises,
     recent_distinct_workouts,
@@ -45,6 +58,27 @@ def switch_user():
 @app.route("/switch-user/clear", methods=["POST"])
 def clear_user():
     session.pop("current_user", None)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/settings/weekly-goal", methods=["POST"])
+def update_weekly_goal():
+    user = current_user()
+    if not user:
+        return redirect(url_for("dashboard"))
+
+    try:
+        goal = int(request.form.get("weekly_goal", ""))
+    except ValueError:
+        goal = None
+    if goal not in WEEKLY_GOAL_CHOICES:
+        flash("Choose a weekly target from 1 to 7 days.", "error")
+        return redirect(url_for("dashboard"))
+
+    with connect_to_database() as connection:
+        set_weekly_goal(connection, user, goal)
+
+    flash(f"Weekly target set to {goal} {'day' if goal == 1 else 'days'}.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -271,11 +305,17 @@ def dashboard():
     unit = WEIGHT_UNITS[user]
 
     search_term = request.args.get("search", "").strip()
+    today = date.today()
 
     with connect_to_database() as connection:
         workouts = search_workouts(connection, user, search_term, unit)
         personal_records = get_personal_records(connection, user, unit)
-        stats = get_dashboard_stats(connection, user)
+        total_workouts = count_workouts(connection, user)
+        weekly_goal = get_weekly_goal(connection, user)
+        training_days = get_training_days(connection, user)
+        last_workout = get_last_workout(connection, user, today)
+        week_comparison = get_week_comparison(connection, user, unit, today)
+        daily_bests = get_exercise_daily_bests(connection, user)
 
     return render_template(
         "index.html",
@@ -284,9 +324,16 @@ def dashboard():
         weight_unit=unit,
         workouts=workouts,
         personal_records=personal_records,
+        total_workouts=total_workouts,
+        week=week_overview(training_days, weekly_goal, today),
+        weekly_goal_choices=WEEKLY_GOAL_CHOICES,
+        last_workout=last_workout,
+        week_comparison=week_comparison,
+        calendar=month_calendar(training_days, today),
+        recent_records=recent_records(daily_bests, unit),
+        trends=exercise_trends(daily_bests, unit, today),
         search_term=search_term,
-        today=date.today().isoformat(),
-        **stats,
+        today=today.isoformat(),
     )
 
 

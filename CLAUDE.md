@@ -25,6 +25,11 @@ Scope: `templates/*.html`, `static/style.css`. Read this before touching any UI.
 - `.form-row` — standard two-column label+input grid for short forms (name + date, etc.).
 - `.save-button` — the one primary-action button style, used for submits, repeat-workout chips, everything. Don't style a new button variant for "primary action" — reuse this class.
 - `.primary-link` — secondary/header-level action link (e.g. "+ Log a workout", "Back to dashboard").
+- `.stepper` with `.step-btn` — minus/plus buttons around a number input (see `log_workout.html`). Use it for any number the user adjusts in small steps.
+- `.stat-panel` inside `.stats-grid` — the dashboard number tiles (label, big value, one-line foot).
+- `.change-up` / `.change-down` / `.change-same` — coloring for "moved since last time" text. There is no green or red token: rises use `--pink-deep` with a ▲, falls use `--muted` with a ▼.
+- Day markers (`.week-dot`, `.month-day`) — filled `--pink-deep` means trained, a `--line` outline means rest, an `--ink` ring means today.
+- Charts are server-rendered inline SVG (see `.trend-line` and `sparkline_points` in `stats.py`), stroked with `currentColor`. No chart library.
 
 ## Mobile rules — hard requirements, not suggestions
 
