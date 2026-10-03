@@ -21,8 +21,11 @@ The app creates `gymtrack.db` in this folder the first time it runs. That file i
 
 ## How the code is organized
 
-- `app.py` contains the Flask page routes, SQLite setup, workout saving, search, and statistics. It is kept in one file so the request-to-database flow is easy to follow.
-- `templates/index.html` is the page structure. Flask fills its template placeholders with workouts and stats from the database.
+- `app.py` creates the Flask app and holds every route. Routes read the request, validate it, and call into the modules below for data.
+- `db.py` opens SQLite connections, creates the tables, and migrates older database schemas.
+- `users.py` holds the profiles, each profile's weight unit, and the kg/lb conversions.
+- `workouts.py` holds the queries: workout search, personal records, dashboard stats, and set prefills.
+- `templates/` has one HTML file per page. Flask fills the template placeholders with workouts and stats from the database.
 - `static/style.css` controls the page layout, colors, and responsive behavior.
 - `requirements.txt` lists the one Python package the app needs.
 

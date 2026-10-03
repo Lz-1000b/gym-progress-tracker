@@ -1,195 +1,33 @@
 import os
-import sqlite3
 from datetime import date, timedelta
-from pathlib import Path
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+
+from db import connect_to_database, initialize_database
+from users import (
+    USERS,
+    WEIGHT_UNITS,
+    current_user,
+    display_to_kg,
+    format_weight,
+    kg_to_display,
+)
+from workouts import (
+    copy_exercises,
+    get_dashboard_stats,
+    get_owned_exercise,
+    get_owned_workout,
+    get_personal_records,
+    get_set_prefill,
+    get_workout_exercises,
+    recent_distinct_workouts,
+    search_workouts,
+)
 
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "local-development-key")
 app.permanent_session_lifetime = timedelta(days=365)
-DATABASE = Path(__file__).with_name("gymtrack.db")
-
-USERS = {"leaha": "Leaha", "uzair": "Uzair"}
-WEIGHT_UNITS = {"leaha": "kg", "uzair": "lb"}
-KG_PER_LB = 0.45359237
-
-HAS_LOGGED_SETS = """EXISTS (
-    SELECT 1 FROM exercise_sets es
-    JOIN workout_exercises we ON we.id = es.workout_exercise_id
-    WHERE we.workout_id = w.id
-)"""
-
-
-def current_user():
-    """Return the session's chosen user key, or None if not picked yet."""
-    key = session.get("current_user")
-    return key if key in USERS else None
-
-
-def kg_to_display(weight_kg, unit):
-    """Convert a weight stored in kg to the given display unit."""
-    return weight_kg / KG_PER_LB if unit == "lb" else weight_kg
-
-
-def display_to_kg(weight, unit):
-    """Convert a weight entered in the given display unit back to kg for storage."""
-    return weight * KG_PER_LB if unit == "lb" else weight
-
-
-def format_weight(value):
-    """Format a weight without trailing zeros, matching the old SQL printf('%g', ...)."""
-    return "%g" % value
-
-
-def connect_to_database():
-    """Open a connection and return rows that can be read by column name."""
-    connection = sqlite3.connect(DATABASE)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
-
-
-def migrate_legacy_exercises(connection):
-    """One-time migration from the old single-row-per-exercise schema to per-set rows."""
-    old_rows = connection.execute(
-        "SELECT id, workout_id, name, sets, reps, weight FROM exercises ORDER BY workout_id, id"
-    ).fetchall()
-
-    position_by_workout = {}
-    for row in old_rows:
-        position = position_by_workout.get(row["workout_id"], 0)
-        exercise = connection.execute(
-            "INSERT INTO workout_exercises (workout_id, name, position) VALUES (?, ?, ?)",
-            (row["workout_id"], row["name"], position),
-        )
-        position_by_workout[row["workout_id"]] = position + 1
-        connection.executemany(
-            """INSERT INTO exercise_sets (workout_exercise_id, set_number, reps, weight)
-               VALUES (?, ?, ?, ?)""",
-            [
-                (exercise.lastrowid, set_number, row["reps"], row["weight"])
-                for set_number in range(1, row["sets"] + 1)
-            ],
-        )
-
-    connection.execute("DROP TABLE exercises")
-
-
-def initialize_database():
-    """Create the workout tables and migrate older schemas."""
-    with connect_to_database() as connection:
-        connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS workouts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                workout_date TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT 'leaha'
-            );
-
-            CREATE TABLE IF NOT EXISTS workout_exercises (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                position INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS exercise_sets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                workout_exercise_id INTEGER NOT NULL REFERENCES workout_exercises(id) ON DELETE CASCADE,
-                set_number INTEGER NOT NULL,
-                reps INTEGER NOT NULL,
-                weight REAL NOT NULL
-            );
-            """
-        )
-        try:
-            connection.execute(
-                "ALTER TABLE workouts ADD COLUMN user_id TEXT NOT NULL DEFAULT 'leaha'"
-            )
-        except sqlite3.OperationalError:
-            pass  # column already exists on a database created before multi-user support
-
-        legacy_table = connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'exercises'"
-        ).fetchone()
-        if legacy_table:
-            migrate_legacy_exercises(connection)
-
-
-def get_current_streak(workout_dates):
-    """Count consecutive calendar days with a workout, starting today or yesterday."""
-    recorded_days = {date.fromisoformat(workout_date) for workout_date in workout_dates}
-    streak_day = date.today()
-    if streak_day not in recorded_days:
-        streak_day -= timedelta(days=1)
-
-    streak = 0
-    while streak_day in recorded_days:
-        streak += 1
-        streak_day -= timedelta(days=1)
-    return streak
-
-
-def recent_distinct_workouts(connection, user, limit=3):
-    """This user's most recent workouts, one per distinct name, newest first."""
-    rows = connection.execute(
-        f"""SELECT id, name, workout_date FROM workouts AS w
-            WHERE user_id = ? AND {HAS_LOGGED_SETS}
-            ORDER BY workout_date DESC, id DESC""",
-        (user,),
-    ).fetchall()
-
-    seen_names = set()
-    recent = []
-    for row in rows:
-        key = row["name"].lower()
-        if key in seen_names:
-            continue
-        seen_names.add(key)
-        recent.append(row)
-        if len(recent) >= limit:
-            break
-    return recent
-
-
-def get_set_prefill(connection, user, exercise_name, sets_logged_so_far):
-    """Reps/weight (in kg) to suggest for an exercise's next set."""
-    if sets_logged_so_far:
-        last = sets_logged_so_far[-1]
-        return last["reps"], last["weight"]
-
-    row = connection.execute(
-        """SELECT es.reps, es.weight
-           FROM exercise_sets AS es
-           JOIN workout_exercises AS we ON we.id = es.workout_exercise_id
-           JOIN workouts AS w ON w.id = we.workout_id
-           WHERE w.user_id = ? AND LOWER(we.name) = LOWER(?)
-           ORDER BY w.workout_date DESC, es.id DESC
-           LIMIT 1""",
-        (user, exercise_name),
-    ).fetchone()
-    if row:
-        return row["reps"], row["weight"]
-    return 8, 0.0
-
-
-def get_owned_workout(connection, user, workout_id):
-    return connection.execute(
-        "SELECT id, name, workout_date FROM workouts WHERE id = ? AND user_id = ?",
-        (workout_id, user),
-    ).fetchone()
-
-
-def get_owned_exercise(connection, user, workout_id, exercise_id):
-    return connection.execute(
-        """SELECT we.id, we.name FROM workout_exercises AS we
-           JOIN workouts AS w ON w.id = we.workout_id
-           WHERE we.id = ? AND we.workout_id = ? AND w.user_id = ?""",
-        (exercise_id, workout_id, user),
-    ).fetchone()
 
 
 @app.route("/switch-user", methods=["POST"])
@@ -257,18 +95,7 @@ def new_workout():
             new_workout_id = workout.lastrowid
 
             if repeat_workout_id:
-                source_workout = get_owned_workout(connection, user, repeat_workout_id)
-                if source_workout:
-                    source_exercises = connection.execute(
-                        """SELECT name, position FROM workout_exercises
-                           WHERE workout_id = ? ORDER BY position""",
-                        (repeat_workout_id,),
-                    ).fetchall()
-                    connection.executemany(
-                        """INSERT INTO workout_exercises (workout_id, name, position)
-                           VALUES (?, ?, ?)""",
-                        [(new_workout_id, ex["name"], ex["position"]) for ex in source_exercises],
-                    )
+                copy_exercises(connection, user, repeat_workout_id, new_workout_id)
 
         return redirect(url_for("log_workout", workout_id=new_workout_id))
 
@@ -314,38 +141,7 @@ def log_workout(workout_id):
                     flash("Workout updated.", "success")
             return redirect(url_for("log_workout", workout_id=workout_id))
 
-        exercise_rows = connection.execute(
-            "SELECT id, name FROM workout_exercises WHERE workout_id = ? ORDER BY position, id",
-            (workout_id,),
-        ).fetchall()
-
-        exercises = []
-        for exercise_row in exercise_rows:
-            set_rows = connection.execute(
-                """SELECT id, set_number, reps, weight FROM exercise_sets
-                   WHERE workout_exercise_id = ? ORDER BY set_number""",
-                (exercise_row["id"],),
-            ).fetchall()
-            prefill_reps, prefill_weight = get_set_prefill(
-                connection, user, exercise_row["name"], set_rows
-            )
-            exercises.append(
-                {
-                    "id": exercise_row["id"],
-                    "name": exercise_row["name"],
-                    "sets": [
-                        {
-                            "id": s["id"],
-                            "set_number": s["set_number"],
-                            "reps": s["reps"],
-                            "weight": format_weight(kg_to_display(s["weight"], unit)),
-                        }
-                        for s in set_rows
-                    ],
-                    "prefill_reps": prefill_reps,
-                    "prefill_weight": format_weight(kg_to_display(prefill_weight, unit)),
-                }
-            )
+        exercises = get_workout_exercises(connection, user, workout_id, unit)
 
     return render_template(
         "log_workout.html",
@@ -475,98 +271,11 @@ def dashboard():
     unit = WEIGHT_UNITS[user]
 
     search_term = request.args.get("search", "").strip()
-    search_pattern = f"%{search_term}%"
 
     with connect_to_database() as connection:
-        workout_rows = connection.execute(
-            f"""SELECT w.id, w.name, w.workout_date
-               FROM workouts AS w
-               WHERE w.user_id = ? AND {HAS_LOGGED_SETS} AND (? = '' OR w.name LIKE ? OR EXISTS (
-                   SELECT 1 FROM workout_exercises AS match_e
-                   WHERE match_e.workout_id = w.id AND match_e.name LIKE ?
-               ))
-               ORDER BY w.workout_date DESC, w.id DESC
-               LIMIT 20""",
-            (user, search_term, search_pattern, search_pattern),
-        ).fetchall()
-
-        exercise_order = {}
-        exercise_data = {}
-        if workout_rows:
-            workout_ids = [row["id"] for row in workout_rows]
-            placeholders = ",".join("?" * len(workout_ids))
-            for row in connection.execute(
-                f"""SELECT we.workout_id, we.id AS exercise_id, we.name,
-                           es.reps, es.weight
-                    FROM workout_exercises AS we
-                    JOIN exercise_sets AS es ON es.workout_exercise_id = we.id
-                    WHERE we.workout_id IN ({placeholders})
-                    ORDER BY we.workout_id, we.position, we.id, es.set_number""",
-                workout_ids,
-            ):
-                exercise_id = row["exercise_id"]
-                if exercise_id not in exercise_data:
-                    exercise_data[exercise_id] = {"name": row["name"], "sets": []}
-                    exercise_order.setdefault(row["workout_id"], []).append(exercise_id)
-                exercise_data[exercise_id]["sets"].append((row["reps"], row["weight"]))
-
-        def build_exercise_details(workout_id):
-            parts = []
-            for exercise_id in exercise_order.get(workout_id, []):
-                exercise = exercise_data[exercise_id]
-                set_descriptions = ", ".join(
-                    f"{reps}x{format_weight(kg_to_display(weight, unit))}"
-                    for reps, weight in exercise["sets"]
-                )
-                parts.append(f"{exercise['name']} ({set_descriptions} {unit})")
-            return ", ".join(parts)
-
-        workouts = [
-            {
-                "id": row["id"],
-                "name": row["name"],
-                "workout_date": row["workout_date"],
-                "exercise_details": build_exercise_details(row["id"]),
-            }
-            for row in workout_rows
-        ]
-
-        record_rows = connection.execute(
-            """SELECT we.name, MAX(es.weight) AS best_weight
-               FROM exercise_sets AS es
-               JOIN workout_exercises AS we ON we.id = es.workout_exercise_id
-               JOIN workouts AS w ON w.id = we.workout_id
-               WHERE w.user_id = ?
-               GROUP BY LOWER(we.name)
-               ORDER BY best_weight DESC, we.name COLLATE NOCASE
-               LIMIT 3""",
-            (user,),
-        ).fetchall()
-        personal_records = [
-            {"name": row["name"], "best_weight": kg_to_display(row["best_weight"], unit)}
-            for row in record_rows
-        ]
-        all_workout_dates = [
-            row[0]
-            for row in connection.execute(
-                f"""SELECT DISTINCT workout_date FROM workouts AS w
-                    WHERE user_id = ? AND {HAS_LOGGED_SETS}
-                    ORDER BY workout_date DESC""",
-                (user,),
-            ).fetchall()
-        ]
-        month = date.today().strftime("%Y-%m")
-        month_stats = connection.execute(
-            f"""SELECT COUNT(*) AS workouts,
-                      COUNT(DISTINCT workout_date) AS visits
-               FROM workouts AS w
-               WHERE user_id = ? AND {HAS_LOGGED_SETS} AND substr(workout_date, 1, 7) = ?""",
-            (user, month),
-        ).fetchone()
-        workout_count = connection.execute(
-            f"SELECT COUNT(*) FROM workouts AS w WHERE user_id = ? AND {HAS_LOGGED_SETS}",
-            (user,),
-        ).fetchone()[0]
+        workouts = search_workouts(connection, user, search_term, unit)
+        personal_records = get_personal_records(connection, user, unit)
+        stats = get_dashboard_stats(connection, user)
 
     return render_template(
         "index.html",
@@ -575,12 +284,9 @@ def dashboard():
         weight_unit=unit,
         workouts=workouts,
         personal_records=personal_records,
-        workouts_this_month=month_stats["workouts"],
-        visits_this_month=month_stats["visits"],
-        current_streak=get_current_streak(all_workout_dates),
-        total_workouts=workout_count,
         search_term=search_term,
         today=date.today().isoformat(),
+        **stats,
     )
 
 
